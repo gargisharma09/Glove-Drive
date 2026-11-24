@@ -1,0 +1,29 @@
+# Secrets & local device configs (never commit Wi-Fi credentials)
+firmware/glove/config.h
+firmware/car/config.h
+firmware/cam/config.h
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+*.egg-info/
+
+# Runtime artifacts
+hub/latest.jpg
+hub/frames/
+*.log
+
+# PlatformIO / Arduino build artifacts
+.pio/
+build/
+*.bin
+*.elf
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.vscode/
