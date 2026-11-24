@@ -62,8 +62,9 @@ uvicorn hub.app.main:app --host 0.0.0.0 --port 8000
 python simulator/simulate.py --host 127.0.0.1 --port 8000
 ```
 
-### 4. Inspect Status & Camera Frame
+### 4. Inspect Dashboard, Status & Camera Frame
 
+- **Live Web Dashboard:** `http://127.0.0.1:8000/`
 - **Hub status JSON:** `http://127.0.0.1:8000/status`
 - **Latest camera frame:** `http://127.0.0.1:8000/latest.jpg`
 

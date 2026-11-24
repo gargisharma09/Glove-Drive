@@ -14,6 +14,7 @@ import time
 from collections import deque
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, Request, Response, WebSocket, WebSocketDisconnect
@@ -88,6 +89,7 @@ class HubState:
     locked: bool = False
     glove: DeviceState = field(default_factory=lambda: DeviceState("glove"))
     car: DeviceState = field(default_factory=lambda: DeviceState("car"))
+    last_drive: dict[str, Any] = field(default_factory=lambda: {"dir": "stop", "speed": 0})
     latest_sensors: dict[str, Any] = field(default_factory=dict)
     camera_frames: int = 0
     camera_last_seen: float = 0.0
@@ -98,6 +100,7 @@ class HubState:
 
 
 state = HubState()
+DASHBOARD_PATH = Path(__file__).resolve().parent / "dashboard.html"
 
 
 # ---------------------------------------------------------------------------
@@ -127,6 +130,7 @@ async def on_frame_received(frame_bytes: bytes) -> None:
 # ---------------------------------------------------------------------------
 
 async def _send_car_stop(reason: str) -> None:
+    state.last_drive = {"dir": "stop", "speed": 0}
     ws = state.car.websocket
     if ws is None:
         return
@@ -246,6 +250,7 @@ async def ws_glove(websocket: WebSocket) -> None:
                     "speed": 0 if cmd == "stop" else DEFAULT_DRIVE_SPEED,
                     "ts": ts,
                 }
+                state.last_drive = {"dir": cmd, "speed": drive_msg["speed"]}
                 car_ws = state.car.websocket
                 if car_ws is not None:
                     try:
@@ -355,6 +360,11 @@ async def ws_car(websocket: WebSocket) -> None:
 # HTTP Endpoints (Camera & Status)
 # ---------------------------------------------------------------------------
 
+@app.get("/")
+async def get_dashboard() -> Response:
+    return FileResponse(DASHBOARD_PATH, media_type="text/html")
+
+
 @app.post("/frame")
 async def post_frame(request: Request) -> JSONResponse:
     frame_bytes = await request.body()
@@ -393,6 +403,7 @@ async def get_status() -> JSONResponse:
         {
             "hub_uptime_s": round(now - state.started_at, 2),
             "locked": state.locked,
+            "last_drive": state.last_drive,
             "devices": {
                 "glove": state.glove.to_status(),
                 "car": state.car.to_status(),

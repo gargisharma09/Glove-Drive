@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GloveDrive Telemetry Dashboard</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --panel: #1e293b;
+      --border: #334155;
+      --text: #f1f5f9;
+      --muted: #94a3b8;
+      --green: #22c55e;
+      --red: #ef4444;
+      --amber: #f59e0b;
+      --blue: #38bdf8;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      padding: 20px;
+      line-height: 1.4;
+    }
+    header {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 20px;
+      padding-bottom: 14px;
+      border-bottom: 1px solid var(--border);
+    }
+    h1 { font-size: 1.4rem; font-weight: 700; letter-spacing: 0.3px; }
+    .sub { color: var(--muted); font-size: 0.85rem; }
+    .badges { display: flex; gap: 10px; align-items: center; }
+    .badge {
+      padding: 5px 12px;
+      border-radius: 999px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      background: var(--panel);
+      border: 1px solid var(--border);
+    }
+    .badge.ok { color: var(--green); border-color: rgba(34,197,94,0.4); }
+    .badge.warn { color: var(--amber); border-color: rgba(245,158,11,0.4); }
+    .badge.bad { color: var(--red); border-color: rgba(239,68,68,0.4); }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1.1fr 1fr;
+      gap: 18px;
+    }
+    @media (max-width: 900px) {
+      .grid { grid-template-columns: 1fr; }
+    }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px;
+    }
+    .card h2 {
+      font-size: 0.95rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      margin-bottom: 12px;
+    }
+    .stack { display: flex; flex-direction: column; gap: 18px; }
+
+    .cam-box {
+      width: 100%;
+      aspect-ratio: 4 / 3;
+      background: #020617;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      position: relative;
+    }
+    .cam-box img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      display: none;
+    }
+    .cam-placeholder { color: var(--muted); font-size: 0.9rem; text-align: center; padding: 16px; }
+    .cam-meta {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 10px;
+      font-size: 0.85rem;
+      color: var(--muted);
+    }
+
+    .dev-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .dev-row:last-child { border-bottom: none; padding-bottom: 0; }
+    .dev-name { font-weight: 600; text-transform: capitalize; }
+    .dev-meta { font-size: 0.82rem; color: var(--muted); }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+    }
+    .metric {
+      background: #0f172a;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px;
+    }
+    .metric.alert {
+      border-color: var(--red);
+      background: rgba(239, 68, 68, 0.12);
+    }
+    .metric-label { font-size: 0.78rem; color: var(--muted); margin-bottom: 4px; }
+    .metric-val { font-size: 1.35rem; font-weight: 700; color: var(--text); }
+    .metric-val.blue { color: var(--blue); }
+    .metric-val.red { color: var(--red); }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>GloveDrive Hub Dashboard</h1>
+      <div class="sub">Local 2.4 GHz Search-and-Rescue Telemetry &bull; Uptime: <span id="uptime">--</span>s</div>
+    </div>
+    <div class="badges">
+      <span id="hub-conn" class="badge ok">Hub Connected</span>
+      <span id="lock-badge" class="badge ok">UNLOCKED</span>
+    </div>
+  </header>
+
+  <div class="grid">
+    <div class="card">
+      <h2>Live Camera Feed</h2>
+      <div class="cam-box">
+        <img id="cam-img" alt="Latest ESP32-CAM frame" />
+        <div id="cam-empty" class="cam-placeholder">Waiting for camera frames on <code>POST /frame</code>...</div>
+      </div>
+      <div class="cam-meta">
+        <span>Frames: <strong id="cam-frames">0</strong></span>
+        <span>Last size: <strong id="cam-bytes">0</strong> B</span>
+        <span>Last seen: <strong id="cam-ago">--</strong></span>
+      </div>
+    </div>
+
+    <div class="stack">
+      <div class="card">
+        <h2>Devices &amp; Signal Health</h2>
+        <div id="devices-list"></div>
+      </div>
+
+      <div class="card">
+        <h2>Drive &amp; Latency</h2>
+        <div class="metrics">
+          <div class="metric">
+            <div class="metric-label">Current Drive</div>
+            <div id="drive-dir" class="metric-val blue">stop (0%)</div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">Glove &rarr; Car RTT</div>
+            <div id="rtt-val" class="metric-val">-- ms</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Environment &amp; Obstacle Sensors</h2>
+        <div class="metrics">
+          <div class="metric">
+            <div class="metric-label">Temperature (DHT11)</div>
+            <div id="s-temp" class="metric-val">-- &deg;C</div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">Humidity (DHT11)</div>
+            <div id="s-hum" class="metric-val">-- %</div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">Gas Sensor (MQ-2 raw)</div>
+            <div id="s-gas" class="metric-val">--</div>
+          </div>
+          <div id="dist-card" class="metric">
+            <div class="metric-label">Distance (HC-SR04)</div>
+            <div id="s-dist" class="metric-val">-- cm</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const camImg = document.getElementById("cam-img");
+    const camEmpty = document.getElementById("cam-empty");
+    let lastFrameCount = -1;
+
+    function deviceRow(name, info) {
+      const online = info && info.online;
+      const badgeClass = online ? "ok" : "bad";
+      const label = online ? "ONLINE" : "OFFLINE";
+      let meta = "";
+      if (name === "camera") {
+        meta = `frames=${info.frames_received ?? 0}`;
+      } else {
+        const rssi = info.rssi_dbm !== null && info.rssi_dbm !== undefined ? `${info.rssi_dbm} dBm (${info.signal_health})` : "no RSSI";
+        const ago = info.last_seen_ago_s !== null && info.last_seen_ago_s !== undefined ? `${info.last_seen_ago_s}s ago` : "never";
+        meta = `${rssi} &bull; ${ago} &bull; msgs=${info.msg_count ?? 0}`;
+      }
+      return `
+        <div class="dev-row">
+          <div>
+            <div class="dev-name">${name}</div>
+            <div class="dev-meta">${meta}</div>
+          </div>
+          <span class="badge ${badgeClass}">${label}</span>
+        </div>
+      `;
+    }
+
+    async function refreshStatus() {
+      try {
+        const res = await fetch("/status", { cache: "no-store" });
+        if (!res.ok) throw new Error("status error");
+        const data = await res.json();
+
+        document.getElementById("hub-conn").textContent = "Hub Connected";
+        document.getElementById("hub-conn").className = "badge ok";
+        document.getElementById("uptime").textContent = data.hub_uptime_s ?? "--";
+
+        const lockBadge = document.getElementById("lock-badge");
+        if (data.locked) {
+          lockBadge.textContent = "LOCKED";
+          lockBadge.className = "badge warn";
+        } else {
+          lockBadge.textContent = "UNLOCKED";
+          lockBadge.className = "badge ok";
+        }
+
+        const devs = data.devices || {};
+        document.getElementById("devices-list").innerHTML =
+          deviceRow("glove", devs.glove || {}) +
+          deviceRow("car", devs.car || {}) +
+          deviceRow("camera", devs.camera || {});
+
+        const cam = devs.camera || {};
+        document.getElementById("cam-frames").textContent = cam.frames_received ?? 0;
+        document.getElementById("cam-bytes").textContent = cam.last_frame_bytes ?? 0;
+        document.getElementById("cam-ago").textContent =
+          cam.last_frame_ago_s !== null && cam.last_frame_ago_s !== undefined ? `${cam.last_frame_ago_s}s` : "--";
+
+        if ((cam.frames_received ?? 0) > 0 && cam.frames_received !== lastFrameCount) {
+          lastFrameCount = cam.frames_received;
+          camImg.src = `/latest.jpg?t=${Date.now()}`;
+          camImg.style.display = "block";
+          camEmpty.style.display = "none";
+        }
+
+        const drive = data.last_drive || {};
+        const dir = drive.dir || "stop";
+        const spd = drive.speed ?? 0;
+        document.getElementById("drive-dir").textContent = `${dir} (${spd}%)`;
+
+        const lat = data.latency_ms || {};
+        const rtt = lat.avg_rtt_ms ?? lat.last_rtt_ms;
+        document.getElementById("rtt-val").textContent = rtt !== null && rtt !== undefined ? `${rtt} ms` : "-- ms";
+
+        const s = data.latest_sensors || {};
+        document.getElementById("s-temp").innerHTML = s.temp_c !== undefined ? `${s.temp_c} &deg;C` : "-- &deg;C";
+        document.getElementById("s-hum").textContent = s.hum_pct !== undefined ? `${s.hum_pct} %` : "-- %";
+        document.getElementById("s-gas").textContent = s.gas_raw !== undefined ? `${s.gas_raw}` : "--";
+
+        const distEl = document.getElementById("s-dist");
+        const distCard = document.getElementById("dist-card");
+        if (s.dist_cm !== undefined && s.dist_cm !== null) {
+          distEl.textContent = `${s.dist_cm} cm`;
+          const isObstacle = s.dist_cm > 0 && s.dist_cm < 25.0;
+          distCard.className = isObstacle ? "metric alert" : "metric";
+          distEl.className = isObstacle ? "metric-val red" : "metric-val";
+        } else {
+          distEl.textContent = "-- cm";
+          distCard.className = "metric";
+          distEl.className = "metric-val";
+        }
+      } catch (e) {
+        const badge = document.getElementById("hub-conn");
+        badge.textContent = "Hub Unreachable";
+        badge.className = "badge bad";
+      }
+    }
+
+    refreshStatus();
+    setInterval(refreshStatus, 250);
+  </script>
+</body>
+</html>
