@@ -20,3 +20,28 @@ Run these checks once all hardware is assembled to validate GloveDrive before de
 6. **Camera Isolation**
    - Stream `POST /frame` at `5 fps` (`FRAMESIZE_QVGA`) while driving.
    - **Expected:** Control commands remain responsive with no noticeable lag.
+
+---
+
+## Dashboard Reliability Checklist
+
+Run these checks against `http://<hub-ip>:8000/` before a live demo:
+
+1. **Hub Stopped**
+   - Stop `uvicorn` (`Ctrl+C`) while the dashboard is open.
+   - **Expected:** Header badge switches to `Hub Unreachable` with the error message underneath, and polling backs off cleanly (`0.25s` → `5.0s`). Restarting `uvicorn` auto-reconnects without refreshing.
+2. **Device Dropped**
+   - Disconnect the car or stop `simulator/simulate.py`.
+   - **Expected:** Device status flips to `OFFLINE` after `3.0s`, sensor tiles flip to `Stale` after `5.0s`, and the Event Timeline logs `signal lost`.
+3. **Page Refresh**
+   - Press `Ctrl+R` / `F5` while devices are connected or idle.
+   - **Expected:** Latest known state from `/status` loads immediately on `DOMContentLoaded`, then resumes live updates.
+4. **Slow Network**
+   - Throttle network in browser DevTools (`Slow 3G`) or test over a weak Wi-Fi link.
+   - **Expected:** Polling does not pile up overlapping requests (`setTimeout` schedules the next poll only after the previous one completes).
+5. **30 Minutes Running**
+   - Leave the dashboard open for 30 minutes with live or simulated data.
+   - **Expected:** Sensor sparklines stay bounded (`<= 120` points / last 5 min), event/detection lists stay capped (`50` / `20`), and memory stays flat.
+6. **Phone View**
+   - Open `http://<laptop-ip>:8000/` on a phone connected to the same 2.4 GHz Wi-Fi.
+   - **Expected:** Responsive 1-column layout stacks cleanly with readable text and working **Demo Mode** toggle.

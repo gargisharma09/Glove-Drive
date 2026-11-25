@@ -64,9 +64,13 @@ python simulator/simulate.py --host 127.0.0.1 --port 8000
 
 ### 4. Inspect Dashboard, Status & Camera Frame
 
-- **Live Web Dashboard:** `http://127.0.0.1:8000/`
+- **Live Web Dashboard:** `http://127.0.0.1:8000/` (includes **Demo Mode** toggle for offline replay, hazard banner, 16:9 camera feed, sensor sparklines, detection feed, event timeline, and mission summary)
 - **Hub status JSON:** `http://127.0.0.1:8000/status`
 - **Latest camera frame:** `http://127.0.0.1:8000/latest.jpg`
+
+> [!NOTE]
+> **Dashboard Hazard Thresholds:**
+> Edit `THRESHOLDS` in [hub/app/dashboard.html](hub/app/dashboard.html) to replace the placeholders (`GAS_YELLOW`, `GAS_RED`, `TEMP_YELLOW`, `TEMP_RED`) with your calibrated sensor values.
 
 ---
 

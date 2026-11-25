@@ -91,12 +91,26 @@ class HubState:
     car: DeviceState = field(default_factory=lambda: DeviceState("car"))
     last_drive: dict[str, Any] = field(default_factory=lambda: {"dir": "stop", "speed": 0})
     latest_sensors: dict[str, Any] = field(default_factory=dict)
+    sensors_last_seen: float = 0.0
     camera_frames: int = 0
     camera_last_seen: float = 0.0
     camera_last_bytes: int = 0
     forward_latencies_ms: deque[float] = field(default_factory=lambda: deque(maxlen=50))
     rtt_latencies_ms: deque[float] = field(default_factory=lambda: deque(maxlen=50))
     pending_acks: dict[int, float] = field(default_factory=dict)
+    events: deque[dict[str, Any]] = field(default_factory=lambda: deque(maxlen=50))
+    detections: deque[dict[str, Any]] = field(default_factory=lambda: deque(maxlen=20))
+    latest_detection: dict[str, Any] | None = None
+
+    def add_event(self, kind: str, message: str, hazard: str = "green") -> None:
+        self.events.appendleft(
+            {
+                "ts": int(time.time() * 1000),
+                "kind": kind,
+                "message": message,
+                "hazard": hazard,
+            }
+        )
 
 
 state = HubState()
@@ -157,6 +171,7 @@ async def heartbeat_watchdog() -> None:
                 if dev.online or not dev.offline_logged:
                     dev.online = False
                     dev.offline_logged = True
+                    state.add_event("signal_lost", f"{dev.name} signal lost (offline > {OFFLINE_TIMEOUT_S}s)", "yellow")
                     logger.warning(
                         "Device '%s' marked OFFLINE (no message for > %.1fs)",
                         dev.name,
@@ -225,12 +240,16 @@ async def ws_glove(websocket: WebSocket) -> None:
                 ts = int(msg.get("ts", int(time.time() * 1000)))
 
                 if cmd == "lock":
+                    if not state.locked:
+                        state.add_event("lock", "System locked by glove", "green")
                     state.locked = True
                     logger.info("System LOCKED by glove")
                     await _send_car_stop("locked")
                     continue
 
                 if cmd == "unlock":
+                    if state.locked:
+                        state.add_event("unlock", "System unlocked by glove", "green")
                     state.locked = False
                     logger.info("System UNLOCKED by glove")
                     continue
@@ -322,6 +341,7 @@ async def ws_car(websocket: WebSocket) -> None:
                 continue
 
             if msg_type == "sensors":
+                state.sensors_last_seen = rx_mono
                 state.latest_sensors = {
                     "temp_c": msg.get("temp_c"),
                     "hum_pct": msg.get("hum_pct"),
@@ -340,6 +360,7 @@ async def ws_car(websocket: WebSocket) -> None:
                         }
                         try:
                             await glove_ws.send_text(json.dumps(alert, separators=(",", ":")))
+                            state.add_event("obstacle", f"Obstacle alert ({dist_cm} cm < {OBSTACLE_THRESHOLD_CM} cm)", "yellow")
                             logger.info(
                                 "Obstacle alert sent to glove (dist_cm=%.1f < %.1f)",
                                 dist_cm,
@@ -415,6 +436,9 @@ async def get_status() -> JSONResponse:
                 },
             },
             "latest_sensors": state.latest_sensors,
+            "sensors_last_seen_ago_s": round(now - state.sensors_last_seen, 3)
+            if state.sensors_last_seen > 0
+            else None,
             "latency_ms": {
                 "last_hub_forward_ms": round(fwd_list[-1], 3) if fwd_list else None,
                 "avg_hub_forward_ms": round(sum(fwd_list) / len(fwd_list), 3) if fwd_list else None,
@@ -422,5 +446,8 @@ async def get_status() -> JSONResponse:
                 "avg_rtt_ms": round(sum(rtt_list) / len(rtt_list), 3) if rtt_list else None,
                 "samples": len(rtt_list),
             },
+            "latest_detection": state.latest_detection,
+            "detections": list(state.detections),
+            "events": list(state.events),
         }
     )
