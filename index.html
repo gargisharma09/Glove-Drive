@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Aegis Rover Command — Robotics Command & Telemetry</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap"
+    rel="stylesheet" />
+  <link rel="stylesheet" href="styles/main.css" />
+</head>
+
+<body>
+  <div class="workspace-layout">
+    <!-- FIXED LEFT SIDEBAR -->
+    <aside class="slate-card left-sidebar" aria-label="Primary Navigation">
+      <div class="sidebar-top">
+        <div class="sidebar-section-title">COMMAND DECK</div>
+        <nav class="sidebar-nav" id="sidebarNav">
+          <a href="#telemetry" class="nav-item active" data-page="telemetry" title="Live Telemetry">
+            <span class="nav-icon" id="navIconTelemetry"></span>
+            <span class="nav-label">Live Telemetry</span>
+          </a>
+          <a href="#analytics" class="nav-item" data-page="analytics" title="Sensor Analytics">
+            <span class="nav-icon" id="navIconAnalytics"></span>
+            <span class="nav-label">Sensor Analytics</span>
+          </a>
+          <a href="#safety" class="nav-item" data-page="safety" title="Safety & Alerts">
+            <span class="nav-icon" id="navIconSafety"></span>
+            <span class="nav-label">Safety &amp; Alerts</span>
+          </a>
+          <a href="#device" class="nav-item" data-page="device" title="Device Info">
+            <span class="nav-icon" id="navIconDevice"></span>
+            <span class="nav-label">Device Info</span>
+          </a>
+        </nav>
+      </div>
+
+      <!-- Compact 6-Node Vertical List (Click-to-Inspect) -->
+      <div class="sidebar-bottom">
+        <div class="sidebar-section-title">SYSTEM NODES</div>
+        <div class="sidebar-nodes" id="pipelineNodesContainer">
+          <!-- Populated dynamically by app.js -->
+        </div>
+        <div class="sidebar-target-unit">
+          <span class="status-dot" id="targetUnitDot"></span>
+          <div class="target-unit-text">
+            <div class="target-unit-label">Target unit</div>
+            <div class="target-unit-id mono">GLOVEDRIVE // ESP32-01</div>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <div class="app-shell">
+      <!-- STICKY TOP HEADER -->
+      <header class="slate-card top-header">
+        <div class="brand-cluster">
+          <div class="brand-emblem" id="brandIcon"></div>
+          <div>
+            <div class="brand-title">
+              AEGIS ROVER COMMAND
+              <span class="brand-tag">MULTI-NODE v2.4</span>
+              <span class="sim-data-badge" id="simDataBadge">SIMULATED DATA</span>
+            </div>
+            <div class="brand-subtitle">ESP32 BLE GLOVE &bull; LAPTOP AI HUB &bull; ESP32 ROVER &bull; ESP32-CAM &bull;
+              CLOUD</div>
+          </div>
+        </div>
+
+        <div class="header-controls">
+          <div class="mode-switch" role="group" aria-label="Telemetry Source Mode">
+            <button id="btnModeSim" class="mode-btn active-sim" type="button">
+              <span class="status-dot indigo"></span>
+              INTERACTIVE SIMULATION MODE
+            </button>
+            <button id="btnModeWs" class="mode-btn" type="button">
+              <span class="status-dot"></span>
+              LIVE HARDWARE WEBSOCKET
+            </button>
+          </div>
+
+          <button id="btnWsConfig" class="ws-status-pill" type="button" title="Configure WebSocket Endpoint">
+            <span class="status-dot" id="wsDot"></span>
+            <span id="wsStatusText">SIM_SANDBOX // 192.168.4.1</span>
+          </button>
+
+          <button id="btnGlobalEstop" class="estop-btn" type="button">
+            <span id="estopIcon"></span>
+            <span id="estopLabel">EMERGENCY STOP</span>
+          </button>
+        </div>
+      </header>
+
+      <!-- Clickable Node Inspector Drawer (opened from sidebar node list) -->
+      <div class="node-inspector hidden" id="nodeInspector">
+        <div>
+          <div class="section-label" id="inspectorTitle">NODE INSPECTOR</div>
+          <div class="mono" style="font-size: 11px; color: var(--text-secondary); margin-top: 2px;" id="inspectorDesc">
+          </div>
+        </div>
+        <div class="inspector-metrics" id="inspectorMetrics"></div>
+        <button class="tactical-btn" id="btnCloseInspector" type="button">CLOSE</button>
+      </div>
+
+      <!-- PAGE 1: LIVE TELEMETRY (existing Bento Grid unchanged) -->
+      <div class="page-view" id="page-telemetry">
+        <main class="bento-grid">
+      <!-- LEFT COLUMN (30%) -->
+      <div class="bento-col">
+        <!-- Control Router & Input Arbiter -->
+        <section class="slate-card panel-card">
+          <div class="panel-header">
+            <span class="section-label" id="arbiterHeaderLabel">CONTROL ROUTER &amp; INPUT ARBITER</span>
+            <span class="badge badge-cyan" id="activeLockBadge">MANUAL_SIM_OVERRIDE</span>
+          </div>
+
+          <div class="arbiter-lock-row">
+            <div class="mono" style="font-size: 11px; color: var(--text-secondary);">
+              VOICE STOP SHORTCUT
+            </div>
+            <span class="voice-stop-pill" id="voiceStopIndicator">ARMED // STANDBY</span>
+          </div>
+
+          <!-- Mock Voice Command Input -->
+          <div>
+            <div
+              style="font-size: 10.5px; color: var(--text-muted); margin-bottom: 5px; font-weight: 600; letter-spacing: 0.05em;">
+              SPEECH &rarr; AI AGENT &rarr; VALIDATOR PIPELINE
+            </div>
+            <form id="voiceCommandForm" class="voice-input-group">
+              <input id="voiceInput" class="tactical-input" type="text" placeholder='e.g. "Move forward 200 cm"'
+                autocomplete="off" />
+              <button class="tactical-btn indigo" type="submit" id="btnSendVoice">
+                <span id="voiceSendIcon"></span>
+                RUN
+              </button>
+            </form>
+            <div class="preset-row" style="margin-top: 6px;">
+              <button class="chip-btn voice-preset" data-cmd="Move forward 200 cm" type="button">Forward 200cm</button>
+              <button class="chip-btn voice-preset" data-cmd="Reverse slowly 100 cm" type="button">Reverse 100cm</button>
+              <button class="chip-btn voice-preset" data-cmd="Turn left 30 degrees" type="button">Steer Left</button>
+              <button class="chip-btn voice-preset" data-cmd="STOP" type="button"
+                style="border-color: rgba(236, 72, 153, 0.45); color: #FBCFE8;">Voice STOP</button>
+            </div>
+          </div>
+
+          <!-- Simulated Glove Gesture Triggers -->
+          <div>
+            <div
+              style="font-size: 10.5px; color: var(--text-muted); margin-bottom: 5px; font-weight: 600; letter-spacing: 0.05em;">
+              ESP32 GLOVE BLE GESTURE TRIGGERS
+            </div>
+            <div class="gesture-grid">
+              <button class="tactical-btn gesture-btn" data-gesture="TILT_FORWARD" type="button">Tilt Forward</button>
+              <button class="tactical-btn gesture-btn" data-gesture="TILT_BACK" type="button">Tilt Back</button>
+              <button class="tactical-btn gesture-btn" data-gesture="NEUTRAL" type="button">Neutral</button>
+              <button class="tactical-btn gesture-btn" data-gesture="TILT_LEFT" type="button">Tilt Left</button>
+              <button class="tactical-btn gesture-btn" data-gesture="TILT_RIGHT" type="button">Tilt Right</button>
+              <button class="tactical-btn magenta gesture-btn" data-gesture="FIST_STOP" type="button">Fist Stop</button>
+            </div>
+          </div>
+
+          <!-- Live Arbiter Event Feed -->
+          <div class="arbiter-log" id="arbiterLog"></div>
+        </section>
+
+        <!-- Motor & Telemetry Metrics -->
+        <section class="slate-card panel-card">
+          <div class="panel-header">
+            <span class="section-label" id="telemetryHeaderLabel">MOTOR &amp; TELEMETRY METRICS</span>
+            <span class="badge badge-indigo mono" id="pwmBadge">PWM 0%</span>
+          </div>
+
+          <div class="metrics-grid">
+            <div class="metric-box">
+              <div class="metric-label">Velocity</div>
+              <div class="metric-val" id="metricSpeed">0 <span
+                  style="font-size: 11px; color: var(--text-secondary);">cm/s</span></div>
+              <div class="metric-sub" id="metricDirection">STATIONARY</div>
+              <canvas id="sparkSpeed" class="tile-sparkline" width="140" height="22"></canvas>
+            </div>
+            <div class="metric-box">
+              <div class="metric-label">Motor RPM (L / R)</div>
+              <div class="metric-val" id="metricRpm">0 / 0</div>
+              <div class="metric-sub" id="metricSteer">STEER 0.0&deg;</div>
+              <canvas id="sparkRpm" class="tile-sparkline" width="140" height="22"></canvas>
+            </div>
+            <div class="metric-box">
+              <div class="metric-label">Battery Bus</div>
+              <div class="metric-val" id="metricVoltage">12.42 <span
+                  style="font-size: 11px; color: var(--text-secondary);">V</span></div>
+              <div class="metric-sub">3S LiPo NOMINAL</div>
+              <canvas id="sparkVolt" class="tile-sparkline" width="140" height="22"></canvas>
+            </div>
+            <div class="metric-box">
+              <div class="metric-label">Wi-Fi RSSI</div>
+              <div class="metric-val" id="metricRssi">-54 <span
+                  style="font-size: 11px; color: var(--text-secondary);">dBm</span></div>
+              <div class="metric-sub" id="metricLinkQual">LINK OPTIMAL</div>
+              <canvas id="sparkRssi" class="tile-sparkline" width="140" height="22"></canvas>
+            </div>
+          </div>
+
+          <div class="sparkline-card">
+            <div style="display: flex; justify-content: space-between; font-size: 10px; color: var(--text-muted);"
+              class="mono">
+              <span>VELOCITY &amp; RSSI TELEMETRY STREAM</span>
+              <span style="color: var(--accent-cyan);">60Hz BUFFER</span>
+            </div>
+            <canvas id="telemetrySparkline" class="sparkline-canvas"></canvas>
+          </div>
+        </section>
+      </div>
+
+      <!-- CENTER COLUMN (40%) -->
+      <div class="bento-col bento-col-center">
+        <section class="slate-card panel-card sim-panel">
+          <div class="panel-header">
+            <span class="section-label" id="simHeaderLabel">2.5D DIGITAL TWIN — CAR MOTION &amp; KINEMATICS</span>
+            <span class="badge badge-cyan mono" id="simCommandBadge">CMD: IDLE</span>
+          </div>
+
+          <div class="canvas-stage">
+            <canvas id="carSimCanvas"></canvas>
+
+            <div class="canvas-hud-top">
+              <div class="hud-pill" id="hudMotionState">
+                <span class="status-dot" id="hudStateDot"></span>
+                <span id="hudStateText">STANDBY // ZERO VELOCITY</span>
+              </div>
+              <div class="hud-pill" id="hudCoords">X: 0 cm &nbsp; Y: 0 cm &nbsp; HDG: 0&deg;</div>
+            </div>
+
+            <div class="canvas-hud-bottom">
+              <div class="sensor-readout-box">
+                <span>FRONT SONAR: <strong id="hudFrontDist" style="color: var(--accent-sky);">285 cm</strong></span>
+                <span>REAR SONAR: <strong id="hudRearDist"
+                    style="color: var(--accent-periwinkle);">340 cm</strong></span>
+              </div>
+              <div class="hud-pill" style="font-size: 10px; color: var(--text-secondary);">
+                WASD / ARROWS &bull; SPACE = E-STOP
+              </div>
+            </div>
+          </div>
+
+          <!-- Interactive Drive Controls -->
+          <div class="drive-controls-wrap">
+            <div class="dpad-grid">
+              <div></div>
+              <button class="drive-key" id="keyForward" type="button">
+                <span>W / &uarr;</span>
+                <span style="font-size: 9px; color: var(--accent-sky);">FORWARD</span>
+              </button>
+              <div></div>
+              <button class="drive-key" id="keyLeft" type="button">
+                <span>A / &larr;</span>
+                <span style="font-size: 9px; color: var(--accent-sky);">STEER L</span>
+              </button>
+              <button class="drive-key reverse" id="keyBackward" type="button">
+                <span>S / &darr;</span>
+                <span style="font-size: 9px; color: var(--accent-periwinkle);">REVERSE</span>
+              </button>
+              <button class="drive-key" id="keyRight" type="button">
+                <span>D / &rarr;</span>
+                <span style="font-size: 9px; color: var(--accent-sky);">STEER R</span>
+              </button>
+            </div>
+
+            <div class="drive-side-actions">
+              <button class="tactical-btn magenta" id="btnSimEstop" type="button" style="padding: 9px 12px;">
+                EMERGENCY BRAKE
+              </button>
+              <button class="tactical-btn" id="btnResetCar" type="button">
+                RESET POSE / CLEAR LOCK
+              </button>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <!-- RIGHT COLUMN (30%) -->
+      <div class="bento-col">
+        <!-- ESP32-CAM & Vision Feed -->
+        <section class="slate-card panel-card">
+          <div class="panel-header">
+            <span class="section-label" id="visionHeaderLabel">ESP32-CAM &amp; VISION AI</span>
+            <span class="badge badge-indigo mono" id="visionFpsBadge">24 FPS // VGA</span>
+          </div>
+
+          <div class="vision-viewport">
+            <canvas id="visionCanvas"></canvas>
+          </div>
+
+          <div class="vision-controls-row">
+            <button class="tactical-btn active" id="btnToggleBbox" type="button">
+              PERSON BBOX: ON
+            </button>
+            <span class="badge badge-cyan mono" id="personConfBadge">
+              PERSON DETECTED // 94.2%
+            </span>
+          </div>
+
+          <!-- Hazard Score Gauge (0-100 Cyan -> Indigo -> Magenta) -->
+          <div class="hazard-gauge-wrap">
+            <div class="hazard-svg-box">
+              <svg viewBox="0 0 120 72" width="112" height="68">
+                <defs>
+                  <linearGradient id="hazardGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                    <stop offset="0%" stop-color="#06B6D4" />
+                    <stop offset="50%" stop-color="#6366F1" />
+                    <stop offset="100%" stop-color="#EC4899" />
+                  </linearGradient>
+                </defs>
+                <path d="M 14 60 A 46 46 0 0 1 106 60" fill="none" stroke="rgba(56, 189, 248, 0.14)" stroke-width="10"
+                  stroke-linecap="round" />
+                <path id="hazardArc" d="M 14 60 A 46 46 0 0 1 106 60" fill="none" stroke="url(#hazardGrad)"
+                  stroke-width="10" stroke-linecap="round" stroke-dasharray="144.5" stroke-dashoffset="105" />
+                <text id="hazardScoreText" x="60" y="54" text-anchor="middle" fill="#F1F5F9"
+                  font-family="JetBrains Mono, monospace" font-size="18" font-weight="700">28</text>
+                <text x="60" y="67" text-anchor="middle" fill="#94A3B8" font-family="JetBrains Mono, monospace"
+                  font-size="8.5">HAZARD 0-100</text>
+              </svg>
+            </div>
+            <div class="hazard-slider-row">
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <span style="font-size: 10.5px; font-weight: 600; color: var(--text-secondary);">THREAT / HAZARD
+                  INDEX</span>
+                <span class="badge badge-cyan" id="hazardTierBadge">NOMINAL</span>
+              </div>
+              <input id="hazardSlider" class="tactical-range" type="range" min="0" max="100" value="28" />
+              <div class="mono" style="font-size: 9.5px; color: var(--text-muted);">
+                Simulate vision hazard score (0–100)
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Cloud Sync Queue -->
+        <section class="slate-card panel-card">
+          <div class="panel-header">
+            <span class="section-label" id="cloudHeaderLabel">SYNC QUEUE &rarr; SUPABASE</span>
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <button class="tactical-btn" id="btnSupabaseConfig" type="button" style="padding: 3px 8px; font-size: 9.5px;">CONFIG</button>
+              <span class="badge badge-cyan mono" id="syncQueueBadge">QUEUE: 3 PENDING</span>
+            </div>
+          </div>
+
+          <div class="sync-list" id="syncQueueList">
+            <!-- Populated dynamically -->
+          </div>
+        </section>
+      </div>
+    </main>
+      </div>
+
+      <!-- PAGE 2: SENSOR ANALYTICS -->
+      <div class="page-view hidden" id="page-analytics">
+        <div class="analytics-grid">
+          <section class="slate-card panel-card chart-card">
+            <div class="panel-header">
+              <span class="section-label">TEMPERATURE &amp; HUMIDITY (LAST 5 MIN)</span>
+              <span class="badge badge-cyan mono">DUAL AXIS</span>
+            </div>
+            <div class="chart-box"><canvas id="chartTempHumidity"></canvas></div>
+          </section>
+
+          <section class="slate-card panel-card chart-card">
+            <div class="panel-header">
+              <span class="section-label">GAS SENSOR (MQ-2 RAW)</span>
+              <span class="badge badge-periwinkle mono">THRESHOLDS: GAS_YELLOW / GAS_RED</span>
+            </div>
+            <div class="chart-box"><canvas id="chartGas"></canvas></div>
+          </section>
+
+          <section class="slate-card panel-card chart-card">
+            <div class="panel-header">
+              <span class="section-label">ULTRASONIC DISTANCE (HC-SR04)</span>
+              <span class="badge badge-cyan mono">UNITS: CM</span>
+            </div>
+            <div class="chart-box"><canvas id="chartDistance"></canvas></div>
+          </section>
+
+          <section class="slate-card panel-card chart-card">
+            <div class="panel-header">
+              <span class="section-label">HAZARD INDEX (0&ndash;100)</span>
+              <span class="badge badge-indigo mono">SAFETY BANDS</span>
+            </div>
+            <div class="chart-box"><canvas id="chartHazard"></canvas></div>
+          </section>
+
+          <section class="slate-card panel-card chart-card">
+            <div class="panel-header">
+              <span class="section-label">LINK HEALTH (RSSI dBm &amp; LATENCY ms)</span>
+              <span class="badge badge-indigo mono">PER-NODE</span>
+            </div>
+            <div class="chart-box"><canvas id="chartLinkHealth"></canvas></div>
+          </section>
+
+          <section class="slate-card panel-card chart-card">
+            <div class="panel-header">
+              <span class="section-label">MOTOR PWM (LEFT &amp; RIGHT)</span>
+              <span class="badge badge-cyan mono">0&ndash;255</span>
+            </div>
+            <div class="chart-box"><canvas id="chartMotorPwm"></canvas></div>
+          </section>
+        </div>
+      </div>
+
+      <!-- PAGE 3: SAFETY & ALERTS -->
+      <div class="page-view hidden" id="page-safety">
+        <div class="safety-grid">
+          <section class="slate-card panel-card">
+            <div class="panel-header">
+              <span class="section-label">EMERGENCY STOP &amp; VALIDATOR STATE</span>
+              <span class="badge badge-cyan mono" id="safetyEstopBadge">DISENGAGED</span>
+            </div>
+            <div class="metrics-grid">
+              <div class="metric-box">
+                <div class="metric-label">E-Stop Hardware Lock</div>
+                <div class="metric-val" id="safetyEstopState">STANDBY</div>
+                <div class="metric-sub" id="safetyLockSource">CONTROL: MANUAL_SIM_OVERRIDE</div>
+              </div>
+              <div class="metric-box">
+                <div class="metric-label">Voice Stop Shortcut</div>
+                <div class="metric-val" id="safetyVoiceStop">ARMED</div>
+                <div class="metric-sub" id="safetyValidatorStatus">VALIDATED_SAFE</div>
+              </div>
+            </div>
+            <div style="display: flex; gap: 8px; margin-top: 4px;">
+              <button class="tactical-btn magenta" id="btnSafetyEstop" type="button">ENGAGE EMERGENCY STOP</button>
+              <button class="tactical-btn" id="btnSafetyClear" type="button">CLEAR LOCK / RESET</button>
+            </div>
+          </section>
+
+          <section class="slate-card panel-card">
+            <div class="panel-header">
+              <span class="section-label">ALERT HISTORY</span>
+              <span class="badge badge-magenta mono" id="alertCountBadge">0 ALERTS</span>
+            </div>
+            <div class="arbiter-log" id="safetyAlertHistory" style="height: 210px;"></div>
+          </section>
+
+          <section class="slate-card panel-card" style="grid-column: 1 / -1;">
+            <div class="panel-header">
+              <span class="section-label">VALIDATOR &amp; ROUTER AUDIT LOG</span>
+              <span class="badge badge-indigo mono">LIVE STREAM</span>
+            </div>
+            <div class="arbiter-log" id="safetyValidatorLog" style="height: 240px;"></div>
+          </section>
+        </div>
+      </div>
+
+      <!-- PAGE 4: DEVICE INFO -->
+      <div class="page-view hidden" id="page-device">
+        <section class="slate-card panel-card">
+          <div class="panel-header">
+            <span class="section-label">MULTI-NODE DEVICE &amp; LINK TELEMETRY</span>
+            <span class="badge badge-cyan mono" id="deviceModeBadge">SIMULATION</span>
+          </div>
+          <div class="device-grid" id="deviceInfoGrid">
+            <!-- Populated dynamically by app.js -->
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <!-- WebSocket Config Modal -->
+  <div class="modal-backdrop hidden" id="wsModal">
+    <div class="slate-card modal-card">
+      <div class="panel-header">
+        <span class="section-label">HARDWARE WEBSOCKET ENDPOINT</span>
+        <button class="tactical-btn" id="btnCloseWsModal" type="button">ESC</button>
+      </div>
+      <p style="font-size: 11.5px; color: var(--text-secondary);">
+        Connect to your Laptop Hub / ESP32 WebSocket relay expecting JSON payloads:
+        <code class="mono"
+          style="color: var(--accent-sky);">{ command, velocity, direction, sensors, hazardScore, personDetected }</code>
+      </p>
+      <input id="wsUrlInput" class="tactical-input" type="text" value="ws://192.168.4.1:81/ws" />
+      <div style="display: flex; justify-content: flex-end; gap: 8px;">
+        <button class="tactical-btn" id="btnTestPayload" type="button">INJECT SAMPLE JSON</button>
+        <button class="tactical-btn indigo" id="btnConnectWs" type="button">CONNECT &amp; SWITCH TO LIVE</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Supabase Cloud Config Modal -->
+  <div class="modal-backdrop hidden" id="supabaseModal">
+    <div class="slate-card modal-card">
+      <div class="panel-header">
+        <span class="section-label">SUPABASE CLOUD SYNC</span>
+        <button class="tactical-btn" id="btnCloseSupabaseModal" type="button">ESC</button>
+      </div>
+      <p style="font-size: 11.5px; color: var(--text-secondary);">
+        Connects browser Sync Queue to <code class="mono" style="color: var(--accent-sky);">telemetry_logs</code>, <code class="mono" style="color: var(--accent-sky);">safety_alerts</code>, and <code class="mono" style="color: var(--accent-sky);">vision_snapshots</code> via Supabase REST API.
+      </p>
+      <div style="display: flex; flex-direction: column; gap: 6px;">
+        <label class="mono" style="font-size: 10px; color: var(--text-muted);">PROJECT URL</label>
+        <input id="supabaseUrlInput" class="tactical-input" type="text" value="https://oolkffdgbmtzepdgdhst.supabase.co" />
+        <label class="mono" style="font-size: 10px; color: var(--text-muted);">ANON PUBLIC KEY (from Project Settings &rarr; API)</label>
+        <input id="supabaseKeyInput" class="tactical-input" type="password" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." />
+      </div>
+      <div class="mono" id="supabaseTestStatus" style="font-size: 10.5px; color: var(--text-secondary);"></div>
+      <div style="display: flex; justify-content: flex-end; gap: 8px;">
+        <button class="tactical-btn indigo" id="btnSaveSupabase" type="button">TEST &amp; ENABLE SYNC</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/vendor/chart.umd.min.js"></script>
+  <script src="js/icons.js"></script>
+  <script src="js/services/supabaseService.js"></script>
+  <script src="js/services/telemetryService.js"></script>
+  <script src="js/simulation/carCanvas.js"></script>
+  <script src="js/components/visionCanvas.js"></script>
+  <script src="js/components/sparkline.js"></script>
+  <script src="js/components/analyticsCharts.js"></script>
+  <script src="js/app.js"></script>
+</body>
+
+</html>
