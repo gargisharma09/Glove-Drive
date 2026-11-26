@@ -55,10 +55,15 @@
         { x: 1.8, y: 3.1, r: 0.40, label: 'WALL_SE' },
       ];
 
+      const defaultWsUrl =
+        window.location.protocol === 'http:' || window.location.protocol === 'https:'
+          ? `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/ws/dashboard`
+          : 'ws://127.0.0.1:8000/ws/dashboard';
+
       this.state = {
         mode: 'SIMULATION', // 'SIMULATION' | 'WEBSOCKET'
         wsState: 'SIMULATED', // 'SIMULATED' | 'CONNECTING' | 'CONNECTED' | 'DISCONNECTED'
-        wsUrl: 'ws://192.168.4.1:81/ws',
+        wsUrl: defaultWsUrl,
         controlLock: 'MANUAL_SIM_OVERRIDE', // 'GLOVE_PRIORITY' | 'AI_VOICE_INTENT' | 'MANUAL_SIM_OVERRIDE'
         emergencyStop: false,
         voiceStopShortcut: false,
@@ -346,6 +351,32 @@
       if (typeof payload.personDetected === 'boolean') {
         this.state.vision.personDetected = payload.personDetected;
       }
+      if (typeof payload.locked === 'boolean') {
+        this.state.emergencyStop = payload.locked;
+      }
+      if (payload.devices && typeof payload.devices === 'object') {
+        if (payload.devices.glove) {
+          this.state.glove.connected = Boolean(payload.devices.glove.online);
+          this.state.nodes.glove.status = payload.devices.glove.online ? 'NOMINAL' : 'ELEVATED';
+          if (typeof payload.devices.glove.rssi_dbm === 'number') {
+            this.state.nodes.glove.signal = `${payload.devices.glove.rssi_dbm} dBm`;
+          }
+        }
+        if (payload.devices.car) {
+          this.state.nodes.car.status = this.state.emergencyStop ? 'ALERT' : payload.devices.car.online ? 'NOMINAL' : 'ELEVATED';
+        }
+        if (payload.devices.camera) {
+          this.state.nodes.cam.status = payload.devices.camera.online ? 'NOMINAL' : 'ELEVATED';
+        }
+      }
+      if (payload.latency_ms && typeof payload.latency_ms === 'object') {
+        if (typeof payload.latency_ms.last_hub_forward_ms === 'number') {
+          this.state.nodes.router.latencyMs = Math.round(payload.latency_ms.last_hub_forward_ms);
+        }
+        if (typeof payload.latency_ms.last_rtt_ms === 'number') {
+          this.state.nodes.car.latencyMs = Math.round(payload.latency_ms.last_rtt_ms);
+        }
+      }
 
       car.pwm = Math.round(clamp(Math.abs(car.velocity) / 2.2, 0, 1) * 100);
       const baseRpm = Math.round(car.velocity * 145);
@@ -354,7 +385,9 @@
       car.pwmLeft = Math.round(clamp(Math.abs(car.rpmLeft) / 330, 0, 1) * 255);
       car.pwmRight = Math.round(clamp(Math.abs(car.rpmRight) / 330, 0, 1) * 255);
 
-      this.addLog('ROUTER', `RX Payload: CMD=${car.command} V=${Math.round(car.velocity * 100)}cm/s HAZ=${this.state.vision.hazardScore}`);
+      if (this.state.mode !== 'WEBSOCKET') {
+        this.addLog('ROUTER', `RX Payload: CMD=${car.command} V=${Math.round(car.velocity * 100)}cm/s HAZ=${this.state.vision.hazardScore}`);
+      }
       this.notify();
     }
 
@@ -521,12 +554,18 @@
       this.state.car.rpmRight = 0;
       this.state.car.direction = 'IDLE';
       this.state.car.command = `ESTOP_${source}`;
+      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+        this.ws.send(JSON.stringify({ command: 'ESTOP', source }));
+      }
       this.addLog('ALERT', `EMERGENCY STOP ENGAGED (${source}) — Motors locked.`);
       this.notify();
     }
 
     resetCarPose() {
       this.state.emergencyStop = false;
+      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+        this.ws.send(JSON.stringify({ command: 'UNLOCK' }));
+      }
       this.state.voiceStopShortcut = false;
       this.state.voice.activeStage = null;
       this.state.glove.gesture = 'NEUTRAL';

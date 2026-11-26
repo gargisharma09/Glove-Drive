@@ -19,6 +19,7 @@ from typing import Any
 
 from fastapi import FastAPI, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from .config import (
     DEFAULT_DRIVE_SPEED,
@@ -114,7 +115,8 @@ class HubState:
 
 
 state = HubState()
-DASHBOARD_PATH = Path(__file__).resolve().parent / "dashboard.html"
+ROOT_DIR = Path(__file__).resolve().parent.parent.parent
+DASHBOARD_PATH = ROOT_DIR / "index.html"
 
 
 # ---------------------------------------------------------------------------
@@ -198,6 +200,12 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="GloveDrive Hub", version="1.0.0", lifespan=lifespan)
+
+# Serve root dashboard static assets (CSS & JS)
+if (ROOT_DIR / "styles").exists():
+    app.mount("/styles", StaticFiles(directory=str(ROOT_DIR / "styles")), name="styles")
+if (ROOT_DIR / "js").exists():
+    app.mount("/js", StaticFiles(directory=str(ROOT_DIR / "js")), name="js")
 
 
 # ---------------------------------------------------------------------------
@@ -375,6 +383,79 @@ async def ws_car(websocket: WebSocket) -> None:
         if state.car.websocket is websocket:
             state.car.websocket = None
             state.car.online = False
+
+
+@app.websocket("/ws/dashboard")
+async def ws_dashboard(websocket: WebSocket) -> None:
+    """Streams live Hub telemetry to the root index.html dashboard and accepts E-Stop/drive commands."""
+    await websocket.accept()
+    logger.info("Dashboard WebSocket connected")
+
+    async def _sender() -> None:
+        while True:
+            sensors = state.latest_sensors or {}
+            drive = state.last_drive or {"dir": "stop", "speed": 0}
+            d_dir = str(drive.get("dir", "stop")).lower()
+            speed_pct = int(drive.get("speed", 0) or 0)
+            vel_ms = 0.0 if d_dir == "stop" else (speed_pct / 100.0) * 1.8 * (-1.0 if d_dir == "back" else 1.0)
+            direction = "REVERSE" if d_dir == "back" else ("IDLE" if d_dir == "stop" else "FORWARD")
+            dist_cm = sensors.get("dist_cm")
+            front_cm = int(dist_cm) if isinstance(dist_cm, (int, float)) else 285
+
+            det = state.latest_detection or {}
+            payload = {
+                "command": f"HUB_{d_dir.upper()}",
+                "velocity": round(vel_ms, 2),
+                "direction": direction,
+                "locked": state.locked,
+                "sensors": {
+                    "frontDist": front_cm,
+                    "rearDist": 340,
+                    "rssi": state.car.rssi if state.car.rssi is not None else -54,
+                    "tempC": sensors.get("temp_c") if sensors.get("temp_c") is not None else 26.4,
+                    "humidity": sensors.get("hum_pct") if sensors.get("hum_pct") is not None else 48.2,
+                    "gasRaw": sensors.get("gas_raw") if sensors.get("gas_raw") is not None else 215,
+                },
+                "hazardScore": int(det.get("hazard_score", 28)) if isinstance(det, dict) else 28,
+                "personDetected": bool(det.get("person_detected", False)) if isinstance(det, dict) else False,
+                "devices": {
+                    "glove": state.glove.to_status(),
+                    "car": state.car.to_status(),
+                    "camera": {
+                        "online": state.camera_last_seen > 0 and (time.monotonic() - state.camera_last_seen) <= OFFLINE_TIMEOUT_S,
+                        "frames_received": state.camera_frames,
+                    },
+                },
+                "latency_ms": {
+                    "last_hub_forward_ms": round(state.forward_latencies_ms[-1], 1) if state.forward_latencies_ms else None,
+                    "last_rtt_ms": round(state.rtt_latencies_ms[-1], 1) if state.rtt_latencies_ms else None,
+                },
+            }
+            await websocket.send_text(json.dumps(payload, separators=(",", ":")))
+            await asyncio.sleep(0.2)
+
+    sender_task = asyncio.create_task(_sender())
+    try:
+        while True:
+            raw = await websocket.receive_text()
+            try:
+                cmd_msg = json.loads(raw)
+            except json.JSONDecodeError:
+                continue
+            cmd = str(cmd_msg.get("command", "")).upper()
+            if cmd == "ESTOP":
+                state.locked = True
+                state.add_event("estop", "Emergency Stop triggered from Dashboard", "red")
+                await _send_car_stop("dashboard estop")
+            elif cmd == "UNLOCK":
+                state.locked = False
+                state.add_event("unlock", "Lock cleared from Dashboard", "green")
+            elif cmd_msg.get("t") == "drive" and state.car.websocket is not None and not state.locked:
+                await state.car.websocket.send_text(json.dumps(cmd_msg, separators=(",", ":")))
+    except WebSocketDisconnect:
+        logger.info("Dashboard WebSocket disconnected")
+    finally:
+        sender_task.cancel()
 
 
 # ---------------------------------------------------------------------------

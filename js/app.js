@@ -87,6 +87,7 @@
 
   const wsModal = document.getElementById('wsModal');
   const wsUrlInput = document.getElementById('wsUrlInput');
+  wsUrlInput.value = service.state.wsUrl;
 
   // Node icon mapping
   const nodeIcons = {
